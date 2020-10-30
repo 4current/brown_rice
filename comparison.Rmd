@@ -8,25 +8,23 @@ header-includes:
 ```{r global_options, R.options=knitr::opts_chunk$set(warning=FALSE, message=FALSE)}
 ```
 
+In this report, I'm using data from https://fdc.nal.usda.gov/index.html to persent a comparison of the nutritional 
+value of brown rice vs. white rice. For information on this API look here. https://fdc.nal.usda.gov/api-guide.html
+
+
 My API key is stored in .Renviron in my home directory using .Renviron as
 data_gov_api_key
 
-For information on this API look here.
-https://fdc.nal.usda.gov/api-guide.html
+Here are two functions written to fetch the information.
 
-I'm going to install a package called config to keep my API key separate from the 
-notebook.
-
-
-
-```{r echo=FALSE,  message=FALSE}
+### Search Functions
+```{r message=FALSE}
 library(curl)
 library(jsonlite)
 
 get_food_data <- function(x) {
   # make sure to bookend with quotes
   x <- paste0("\"", x, "\"")
-
   get_food_url <- "https://api.nal.usda.gov/fdc/v1/foods/search"
   query_terms = c(
     paste("query", URLencode(x), sep = "="),
@@ -35,12 +33,10 @@ get_food_data <- function(x) {
   )
   query_string = paste(query_terms, collapse = "&")
   url <- paste(get_food_url, query_string, sep = "?")
-  
   # print(url)
   
   curl_h <- new_handle()
   handle_setheaders(curl_h, 'X-Api-Key' = Sys.getenv("data_gov_api_key") )
-
   con <- curl(url, handle = curl_h)
   out <- readLines(con)
   close(con)
@@ -48,15 +44,12 @@ get_food_data <- function(x) {
 }
 
 get_food_by_fdcId <- function(id) {
-  
   get_food_url <- "https://api.nal.usda.gov/fdc/v1/food"
   url <- paste(get_food_url, id, sep = "/")
-  
   # print(url)
   
   curl_h <- new_handle()
   handle_setheaders(curl_h, 'X-Api-Key' = Sys.getenv("data_gov_api_key") )
-
   con <- curl(url, handle = curl_h)
   out <- readLines(con)
   close(con)
@@ -65,6 +58,7 @@ get_food_by_fdcId <- function(id) {
 
 ```
 
+### Retrieve Data
 ```{r  message=FALSE, warning=FALSE}
 rice <- c(
   white="Rice, white, cooked, fat not added in cooking",
@@ -81,6 +75,7 @@ foodItems <- lapply(ids, get_food_by_fdcId)
 
 ```
 
+### Initial Inputs
 ```{r}
 library(dplyr)
 library(kableExtra)
@@ -91,16 +86,13 @@ white_rice_ingredients <-  foodItems[[1]]$inputFoods %>%
     portion=portionDescription,
     grams=ingredientWeight
     ) 
-
 brown_rice_ingredients <-  foodItems[[2]]$inputFoods %>%
   transmute(
     ingredient=ingredientDescription,
     portion=portionDescription,
     grams=ingredientWeight
     )
-
 ```
-
 
 ```{r echo=FALSE, results='asis'}
 library(knitr)
@@ -129,12 +121,11 @@ cat(c("\\begin{table}[!htb]
 
 ```
 
-
-```{r echo=FALSE}
+### Compare Nutrients
+```{r echo=TRUE}
 library(dplyr)
 library(knitr)
 library(xtable)
-
 
 portions <- unlist(lapply(foodItems, function(x) {x$foodPortions$portionDescription[1]}))
 names(portions) <- shortNames
@@ -145,16 +136,28 @@ white.nutrients.df <- white.df$foodNutrients[[1]] %>%
 brown.nutrients.df <- brown.df$foodNutrients[[1]] %>%
   transmute(nutrient=nutrientName,value,unit=unitName)
 
-combined.df <- full_join(white.nutrients.df, brown.nutrients.df, by="nutrient", suffix=c(".white",".brown")) %>%
-  filter(unit.brown=="G" | unit.white == "G" | unit.brown == "KCAL" | unit.white == "KCAL") %>%
+combined.df <- full_join(
+  white.nutrients.df, brown.nutrients.df, 
+  by="nutrient", suffix=c(".white",".brown")
+  ) %>%
+  filter(
+    unit.brown=="G" |
+    unit.white == "G" |
+    unit.brown == "KCAL" |
+    unit.white == "KCAL"
+  ) %>%
   filter(value.brown > 0, value.white > 0) %>%
   arrange(desc(value.white)) %>%
   rename(white=value.white, brown=value.brown) %>%
   select(nutrient, white, brown)
 
+kable(combined.df, format = "latex", label="Table 3",
+      caption="Nutrient List", booktabs = TRUE) 
 
-kable(combined.df, format = "latex", label="Table 3", caption="Nutrient List", booktabs = TRUE) 
+```
 
+### Calories
+```{r}
 
 compared.df <-data.frame(
   rbind(combined.df$white, combined.df$brown),
@@ -167,6 +170,7 @@ print(grams)
 barplot(compared.df$Energy,  main = "Calories", names.arg=shortNames)
 ```
 
+### Nutrients by Mass
 ```{r}
 barplot(height=as.matrix(compared.df[,2:6]),names.arg=c("Water", "Carbohydrates", "Protein", "Fiber", "Lipids"), main="Nutrients", legend.text = shortNames, beside=TRUE, log = "y", args.legend = list(x = 'topright'))
 
