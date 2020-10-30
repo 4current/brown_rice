@@ -44,7 +44,7 @@ get_food_data <- function(x) {
   con <- curl(url, handle = curl_h)
   out <- readLines(con)
   close(con)
-  fromJSON(out)
+  fromJSON(out)[[5]]
 }
 
 get_food_by_fdcId <- function(id) {
@@ -66,16 +66,17 @@ get_food_by_fdcId <- function(id) {
 ```
 
 ```{r  message=FALSE}
-comparedItems <- c(
-  "Rice, white, cooked, fat not added in cooking",
-  "Rice, brown, cooked, fat not added in cooking"
+rice <- c(
+  white="Rice, white, cooked, fat not added in cooking",
+  brown="Rice, brown, cooked, fat not added in cooking"
 )
 
-shortNames <-  c("white", "brown")
+shortNames <- c("white", "brown")
+white.df <- get_food_data(rice["white"])
+brown.df <- get_food_data(rice["brown"])
 
-searchResults <- sapply(comparedItems, get_food_data)
+ids <- c(white.df$fdcId, brown.df$fdcId)
 
-ids <- unname(apply(searchResults, c(2), function(x) {x$foods$fdcId}))
 foodItems <- lapply(ids, get_food_by_fdcId)
 
 ```
@@ -129,10 +130,42 @@ cat(c("\\begin{table}[!htb]
 ```
 
 
-```{r}
+```{r echo=FALSE}
+library(dplyr)
+library(knitr)
+library(xtable)
+
 
 portions <- unlist(lapply(foodItems, function(x) {x$foodPortions$portionDescription[1]}))
 names(portions) <- shortNames
+
+white.nutrients.df <- white.df$foodNutrients[[1]] %>%
+  transmute(nutrient=nutrientName,value,unit=unitName)
+
+brown.nutrients.df <- brown.df$foodNutrients[[1]] %>%
+  transmute(nutrient=nutrientName,value,unit=unitName)
+
+combined.df <- full_join(white.nutrients.df, brown.nutrients.df, by="nutrient", suffix=c(".white",".brown")) %>%
+  filter(unit.brown=="G" | unit.white == "G" | unit.brown == "KCAL" | unit.white == "KCAL") %>%
+  filter(value.brown > 0, value.white > 0) %>%
+  arrange(desc(value.white)) %>%
+  rename(white=value.white, brown=value.brown) %>%
+  select(nutrient, white, brown)
+
+
+kable(combined.df, format = "latex", booktabs = TRUE) 
+
+
+compared.df <-data.frame(
+  rbind(combined.df$white, combined.df$brown),
+  row.names = shortNames)
+names(compared.df) <- combined.df$nutrient
+
+compared.df
+
+
+
+
 
 ```
 
