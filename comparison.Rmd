@@ -161,9 +161,13 @@ compared.df <-data.frame(
   row.names = shortNames)
 names(compared.df) <- combined.df$nutrient
 
-compared.df
+grams <- colSums(combined.df[2:6,2:3], na.rm=TRUE)
+print(grams)
 
+barplot(compared.df$Energy, main = "Calories", names.arg=shortNames)
 
+bp <- barplot(height=as.matrix(compared.df[,3:6]), main="Nutrients", legend.text = shortNames, beside = TRUE)
+print(bp)
 
 
 
