@@ -1,0 +1,138 @@
+---
+title: "White Rice vs. Brown Rice"
+output: pdf_document
+header-includes:
+  - \usepackage{booktabs}
+---
+
+```{r global_options, R.options=knitr::opts_chunk$set(warning=FALSE, message=FALSE)}
+```
+
+My API key is stored in .Renviron in my home directory using .Renviron as
+data_gov_api_key
+
+For information on this API look here.
+https://fdc.nal.usda.gov/api-guide.html
+
+I'm going to install a package called config to keep my API key separate from the 
+notebook.
+
+
+
+```{r echo=FALSE,  message=FALSE}
+library(curl)
+library(jsonlite)
+
+get_food_data <- function(x) {
+  # make sure to bookend with quotes
+  x <- paste0("\"", x, "\"")
+
+  get_food_url <- "https://api.nal.usda.gov/fdc/v1/foods/search"
+  query_terms = c(
+    paste("query", URLencode(x), sep = "="),
+    paste("dataType", "Survey (FNDDS)", sep = "="),
+    paste("pageSize", "200", sep = "=")
+  )
+  query_string = paste(query_terms, collapse = "&")
+  url <- paste(get_food_url, query_string, sep = "?")
+  
+  # print(url)
+  
+  curl_h <- new_handle()
+  handle_setheaders(curl_h, 'X-Api-Key' = Sys.getenv("data_gov_api_key") )
+
+  con <- curl(url, handle = curl_h)
+  out <- readLines(con)
+  close(con)
+  fromJSON(out)
+}
+
+get_food_by_fdcId <- function(id) {
+  
+  get_food_url <- "https://api.nal.usda.gov/fdc/v1/food"
+  url <- paste(get_food_url, id, sep = "/")
+  
+  # print(url)
+  
+  curl_h <- new_handle()
+  handle_setheaders(curl_h, 'X-Api-Key' = Sys.getenv("data_gov_api_key") )
+
+  con <- curl(url, handle = curl_h)
+  out <- readLines(con)
+  close(con)
+  fromJSON(out)
+}
+
+```
+
+```{r  message=FALSE}
+comparedItems <- c(
+  "Rice, white, cooked, fat not added in cooking",
+  "Rice, brown, cooked, fat not added in cooking"
+)
+
+shortNames <-  c("white", "brown")
+
+searchResults <- sapply(comparedItems, get_food_data)
+
+ids <- unname(apply(searchResults, c(2), function(x) {x$foods$fdcId}))
+foodItems <- lapply(ids, get_food_by_fdcId)
+
+```
+
+```{r}
+library(dplyr)
+library(kableExtra)
+
+white_rice_ingredients <-  foodItems[[1]]$inputFoods %>%
+  transmute(
+    ingredient=ingredientDescription,
+    portion=portionDescription,
+    grams=ingredientWeight
+    ) 
+
+brown_rice_ingredients <-  foodItems[[2]]$inputFoods %>%
+  transmute(
+    ingredient=ingredientDescription,
+    portion=portionDescription,
+    grams=ingredientWeight
+    )
+
+```
+
+
+```{r echo=FALSE, results='asis'}
+library(knitr)
+library(xtable)
+
+t1 <- white_rice_ingredients %>%
+  kable(format = "latex", booktabs = TRUE) %>%
+  column_spec(1, width = "11em")
+t2 <- brown_rice_ingredients %>%
+  kable(format = "latex", booktabs = TRUE)  %>%
+  column_spec(1, width = "11em")
+
+cat(c("\\begin{table}[!htb]
+    \\begin{minipage}{.5\\linewidth}
+      \\centering
+        \\caption{White Rice Ingredients}",
+        t1,
+    "\\end{minipage}%
+    \\begin{minipage}{.5\\linewidth}
+      \\centering
+        \\caption{Brown Rice Ingredients}",
+        t2,
+    "\\end{minipage} 
+\\end{table}"
+))
+
+```
+
+
+```{r}
+
+portions <- unlist(lapply(foodItems, function(x) {x$foodPortions$portionDescription[1]}))
+names(portions) <- shortNames
+
+```
+
