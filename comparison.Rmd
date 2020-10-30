@@ -65,7 +65,7 @@ get_food_by_fdcId <- function(id) {
 
 ```
 
-```{r  message=FALSE}
+```{r  message=FALSE, warning=FALSE}
 rice <- c(
   white="Rice, white, cooked, fat not added in cooking",
   brown="Rice, brown, cooked, fat not added in cooking"
@@ -153,7 +153,7 @@ combined.df <- full_join(white.nutrients.df, brown.nutrients.df, by="nutrient", 
   select(nutrient, white, brown)
 
 
-kable(combined.df, format = "latex", booktabs = TRUE) 
+kable(combined.df, format = "latex", label="Table 3", caption="Nutrient List", booktabs = TRUE) 
 
 
 compared.df <-data.frame(
@@ -164,11 +164,11 @@ names(compared.df) <- combined.df$nutrient
 grams <- colSums(combined.df[2:6,2:3], na.rm=TRUE)
 print(grams)
 
-barplot(compared.df$Energy, main = "Calories", names.arg=shortNames)
+barplot(compared.df$Energy,  main = "Calories", names.arg=shortNames)
+```
 
-bp <- barplot(height=as.matrix(compared.df[,3:6]), main="Nutrients", legend.text = shortNames, beside = TRUE)
-print(bp)
-
+```{r}
+barplot(height=as.matrix(compared.df[,2:6]),names.arg=c("Water", "Carbohydrates", "Protein", "Fiber", "Lipids"), main="Nutrients", legend.text = shortNames, beside=TRUE, log = "y", args.legend = list(x = 'topright'))
 
 
 ```
