@@ -18,43 +18,40 @@ data_gov_api_key
 Here are two functions written to fetch the information.
 I've learned from the [data documentation](https://www.ars.usda.gov/ARSUserFiles/80400530/pdf/fndds/2017_2018_FNDDS_Doc.pdf) that the food nutrient measures are per 100g of edible portion. Therefore, we need to scale the values by, a factor of portion weight / 100 in order to get he actual serving numbers for comparison.
 
+Although the /v1/foods/search endpoint provides nutrient values, we need to fetch the /v1/foods endpoint to obtain the portion weights in orfer to normalize values based on portion size. So we have 
+
 ### Search Functions
 ```{r messages=F}
 library(httr)
 
-get_food_data <- function(x) {
-  # make sure to bookend with quotes
-  get_food_url <- "https://api.nal.usda.gov/fdc/v1/foods/search"
-  query_terms = c(
-    paste("query", URLencode(x), sep = "="),
-    paste("pageSize", "200", sep = "="),
-    paste("dataType", "Survey (FNDDS)", sep = "="),
-    paste("requireAllWords", "1", sep = "=")
-   
-  )
-  query_string = paste(query_terms, collapse = "&")
-  url <- paste(get_food_url, query_string, sep = "?")
-  #print(url)
+get.fdc <- function(path, ids, terms) {
+  # append path
+  fdc_url <- "https://api.nal.usda.gov"
+  fdc_url <- modify_url(fdc_url, path = path)
+  
+  # build query string
+  if (grepl("search$", path)) {
+    qs <- paste(
+      paste(c("query=description:", terms), collapse = " "),
+      "requireAllWords=1",
+      "dataType=Survey (FNDDS)",
+      "pageSize=200",
+      sep = "&")
+    fdc_url <- modify_url(
+      fdc_url,
+      query = qs
+      )
+  } else {
+    fdc_url <- modify_url(
+      fdc_url,
+      query = paste0("fdcIds=", paste(ids, collapse = ","))
+      )
+  }
+  fdc_url <- URLencode(fdc_url)
+  # print(fdc_url)
 
   r <- GET(
-    url,
-    add_headers('X-Api-Key' = Sys.getenv("data_gov_api_key"))
-    )
-  content(r)
-}
-
-get_food_by_fdcIds <- function(ids) {
-  
-  get_food_url <- "https://api.nal.usda.gov/fdc/v1/foods"
-  qString <- paste0(
-    "fdcIds=",
-    paste(ids, collapse = ",")
-    )
-  url <- paste(get_food_url, qString, sep = "?")
-  
-  print(url)
-  r <- GET(
-    url,
+    fdc_url,
     add_headers('X-Api-Key' = Sys.getenv("data_gov_api_key"))
     )
   content(r)
@@ -65,34 +62,74 @@ get_food_by_fdcIds <- function(ids) {
 ### Retrieve Data
 This code snippet will yield a data frame of four different kinds of rice: white, brown, yellow and wild.
 ```{r  message=FALSE, warning=FALSE}
+library(tidyverse)
 
-searchTerms <- paste("rice", "cooked", "\"no added fat\"", "")
-searchExcept <- paste("-\"cream of\"", "-\"brown and wild\"", "-\"white and wild\"")
-searchString <- paste("description:","(", searchTerms, searchExcept, ")")
+# First get the ids based on a descriptive search
+rice1 <- get.fdc("fdc/v1/foods/search",
+  terms = c(
+    "rice", "cooked", "\"no added fat\"",
+    "-\"cream of\"",
+    "-\"brown and wild\"",
+    "-\"white and wild\"")
+  )
+names(rice1$foods[[1]])
+ids <- sapply(rice1$foods, function(x) x$fdcId)
+rice_names <- sapply(rice1$foods,
+                function(x) {
+                  sub(
+                    "^.*(brown|white|yellow|wild).*$",
+                    "\\1 rice",
+                    x$lowercaseDescription
+                    )
+                  }
+                )
+ids
+rice_names
 
-rice.df <- get_food_data(searchString)$foods
-descriptions <- sapply(rice.df, function(x) {x$description})
-shortNames <- sapply(rice.df, function(x) {sub("^.*(brown|white|yellow|wild).*$", "\\1", tolower(x$description))})
-descriptions
-shortNames
+# then get the actual food details
+rice2 <- get.fdc("fdc/v1/foods", ids = ids)
+
+# examine the structure
+str(rice2, max.level = 1)
+names(rice2[[1]])
+
 ```
-
+So now we can construct a usable data frame from the secondary results
 
 ```{r}
-ids <- sapply(rice.df, function(x) x$fdcId)
-rice2.df <- get_food_by_fdcIds(ids)
-names(rice2.df) <- shortNames
-#str(rice2.df, max.lev = 3)
+library(dplyr)
+library(data.table)
 
-portions <- as.data.frame(
-  sapply(
-    rice2.df,
-    function(x) {
-      unlist(x$foodPortions[[2]])
-      }
-    )
-  )
-knitr::kable(portions[row.names(portions) == c("gramWeight", "portionDescription"),])
+portions <- sapply(rice2, function(x) x$foodPortions)
+portionWeights <- sapply(portions[2,], function(x) x$gramWeight)
+
+rice.df <- data.frame(
+  id = ids,
+  name = rice_names,
+  portionMass = portionWeights 
+)
+
+rice.df
+
+
+# portions <- as.data.frame(
+#   sapply(
+#     rice2.df,
+#     function(x) {
+#       unlist(x$foodPortions[[2]])
+#       }[]
+#     )
+#   )
+# 
+# t_portions <- transpose(portions)
+# colnames(t_portions) <- rownames(portions)
+# rownames(t_portions) <- colnames(portions)
+# t_portions2 <- t_portions %>%
+#   mutate( servingScaleFactor = as.numeric(gramWeight) / 100 ) %>%
+#   select(portionDescription,gramWeight, servingScaleFactor)
+# t_portions2
+
+#portions[row.names(portions) == c("gramWeight", "portionDescription"),]
 #inputs
 
 ```
